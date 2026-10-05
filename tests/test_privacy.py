@@ -1,6 +1,14 @@
 import pytest
 
-from salyq.privacy import Anonymizer, PIILeakError, assert_clean, detect
+from salyq.privacy import (
+    Anonymizer,
+    ConsentRequired,
+    PIILeakError,
+    amount_bucket,
+    assert_clean,
+    detect,
+    prepare_external,
+)
 from salyq.privacy.validators import iban_ok, kz_id_checksum_ok, kz_id_kind, luhn_ok
 from tests.helpers import make_kz_iban, make_kz_id
 
@@ -138,3 +146,73 @@ class TestAnonymizer:
         assert_clean(a.anonymize(self.TEXT).text)
         with pytest.raises(PIILeakError):
             assert_clean(self.TEXT)
+
+
+class TestAddresses:
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "ул. Абая 150, кв. 12",
+            "улица Толе би, д. 59",
+            "пр. Назарбаева 223/1",
+            "мкр. Самал-2, д. 58, оф. 4",
+            "Абай даңғылы, 10",
+            "Сәтбаев көшесі 5, пәтер 3",
+            "проспект «Мангилик Ел» 55",
+        ],
+    )
+    def test_detected(self, text):
+        (e,) = detect(text)
+        assert (e.kind, e.value) == ("ADDRESS", text)
+
+    def test_house_and_flat_are_part_of_address(self):
+        (e,) = detect("Адрес: ул. Абая 150, кв. 12, г. Алматы")
+        assert e.value == "ул. Абая 150, кв. 12"
+
+
+class TestAmounts:
+    @pytest.mark.parametrize(
+        ("tenge", "label"),
+        [
+            (0, "[СУММА В ТЕНГЕ: до 10 тыс.]"),
+            (9_999, "[СУММА В ТЕНГЕ: до 10 тыс.]"),
+            (10_000, "[СУММА В ТЕНГЕ: 10 тыс.–50 тыс.]"),
+            (1_250_000, "[СУММА В ТЕНГЕ: 1 млн–5 млн]"),
+            (2_595_000_000, "[СУММА В ТЕНГЕ: от 1 млрд]"),
+        ],
+    )
+    def test_bucket(self, tenge, label):
+        assert amount_bucket(tenge) == label
+
+    def test_amounts_replaced_only_on_request(self):
+        text = "получил 1 250 000,50 ₸, 45 000 тенге, 3 млн тг и KZT 700"
+        assert Anonymizer().anonymize(text).text == text
+        out = Anonymizer().anonymize(text, bucket_amounts=True).text
+        assert out == (
+            "получил [СУММА В ТЕНГЕ: 1 млн–5 млн], [СУММА В ТЕНГЕ: 10 тыс.–50 тыс.], "
+            "[СУММА В ТЕНГЕ: 1 млн–5 млн] и [СУММА В ТЕНГЕ: до 10 тыс.]"
+        )
+
+    def test_non_money_numbers_untouched(self):
+        text = "ставка 4%, договор № 15/2026 от 01.02.2026, КНП 710"
+        assert Anonymizer().anonymize(text, bucket_amounts=True).text == text
+
+
+class TestPrepareExternal:
+    TEXT = f"ИП Иванов Иван Иванович (ИИН {IIN}), ул. Абая 150, получил 150 000 ₸. Какой налог?"
+
+    def test_requires_consent(self):
+        with pytest.raises(ConsentRequired):
+            prepare_external(self.TEXT, Anonymizer(), cross_border_consent=False)
+
+    def test_output(self):
+        out = prepare_external(self.TEXT, Anonymizer(), cross_border_consent=True)
+        assert out == "ИП [PERSON_1] (ИИН [IIN_1]), [ADDRESS_1], получил [СУММА В ТЕНГЕ: 100 тыс.–500 тыс.]. Какой налог?"
+
+    @pytest.mark.parametrize(
+        "residual",
+        ["счёт 1234567890", "ref KZ00", "a@b", "тел 7 01 23 45 67 89"],
+    )
+    def test_residual_pii_blocks_request(self, residual):
+        with pytest.raises(PIILeakError):
+            assert_clean(residual)

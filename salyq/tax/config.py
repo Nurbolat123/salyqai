@@ -35,11 +35,13 @@ class IncomeLimit(_Frozen):
 
 
 class SimplifiedRegime(_Frozen):
-    rate: Decimal
+    rate: Decimal  # базовая ставка; применяется, если ставка маслихата региона не найдена
     rate_min: Decimal  # нижняя граница корректировки маслихатом
     rate_max: Decimal
     components: tuple[TaxComponent, ...]
     income_limit: IncomeLimit
+    # Доли лимита, при достижении которых предупреждаем пользователя (по возрастанию)
+    limit_warning_levels: tuple[Decimal, ...] = ()
     max_employees: int | None = None
 
     @model_validator(mode="after")
@@ -49,6 +51,9 @@ class SimplifiedRegime(_Frozen):
             raise ValueError(f"сумма долей компонентов должна быть 1, получено {total}")
         if not self.rate_min <= self.rate <= self.rate_max:
             raise ValueError("базовая ставка вне диапазона корректировки")
+        levels = self.limit_warning_levels
+        if list(levels) != sorted(set(levels)) or any(not 0 < x < 1 for x in levels):
+            raise ValueError("limit_warning_levels: уникальные доли в (0; 1) по возрастанию")
         return self
 
 
@@ -72,16 +77,30 @@ class SelfSocialPayments(_Frozen):
     vosms: SocialPayment
 
 
+class Deadline(_Frozen):
+    """Срок как смещение от конца периода: day-е число через months_after месяцев."""
+
+    months_after: int
+    day: int
+
+
+class Deadlines(_Frozen):
+    declaration_910: Deadline  # сдача ф. 910.00 после полугодия
+    tax_payment: Deadline  # уплата налога по ф. 910.00
+    social_payments: Deadline  # соцплатежи за себя после месяца
+
+
 class TaxYearConfig(_Frozen):
     year: int
     version: str
     effective_from: str
-    verified: bool  # подтверждено ли бухгалтером против НК / закона о бюджете
+    approved_by: str | None = None  # эксперт, утвердивший версию; None — черновик
     mrp_tiyn: int
     mzp_tiyn: int
     simplified: SimplifiedRegime
     social_self: SelfSocialPayments
     vat_registration_threshold_mrp: int
+    deadlines: Deadlines
     sources: tuple[str, ...] = ()
     notes: str = ""
 

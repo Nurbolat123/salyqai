@@ -22,8 +22,9 @@ class Trace:
     config_year: int
     config_version: str
     config_sha256: str
-    config_verified: bool
+    config_approved_by: str | None
     steps: list[TraceStep] = field(default_factory=list)
+    operations: list[dict[str, Any]] = field(default_factory=list)  # операции, вошедшие в доход
 
     def money(self, code: str, description: str, formula: str, result: int, **inputs: Any) -> int:
         self.steps.append(
@@ -43,7 +44,11 @@ class Trace:
 
 def _plain_value(v: Any) -> Any:
     # Decimal → str, чтобы след был JSON-сериализуем без потери точности
-    return v if isinstance(v, (int, str, bool, type(None))) else str(v)
+    if isinstance(v, (int, str, bool, type(None))):
+        return v
+    if isinstance(v, (list, tuple)):
+        return [_plain_value(x) for x in v]
+    return str(v)
 
 
 def _plain(inputs: dict[str, Any]) -> dict[str, Any]:

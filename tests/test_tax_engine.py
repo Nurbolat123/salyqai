@@ -1,12 +1,26 @@
 import json
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from salyq.money import to_tiyn
-from salyq.tax import ConfigNotFound, TaxInputError, available_years, calculate_self_social, calculate_simplified, load_year
+from salyq.tax import (
+    ConfigNotFound,
+    IncomeItem,
+    RegionIncome,
+    TaxInputError,
+    available_years,
+    calculate_self_social,
+    calculate_simplified,
+    load_year,
+    period_deadlines,
+)
 from salyq.tax.config import RATES_DIR
+
+ALMATY, ASTANA = "750000000", "710000000"  # коды КАТО
+LIMIT_2026 = 600_000 * 432_500  # 2 595 000 000 ₸ в тиынах
 
 
 def codes(result):
@@ -15,6 +29,11 @@ def codes(result):
 
 def step(result, code):
     return next(s for s in result.trace.steps if s.code == code)
+
+
+def one(income_tiyn, rate="0.04", **kw):
+    """Один регион со ставкой маслихата."""
+    return [RegionIncome(ALMATY, income_tiyn, rate=Decimal(rate) if rate else None, **kw)]
 
 
 class TestConfig:
@@ -33,7 +52,13 @@ class TestConfig:
     def test_rates_are_exact_decimals(self):
         cfg = load_year(2026).config
         assert cfg.simplified.rate == Decimal("0.04")
+        assert cfg.simplified.limit_warning_levels == (Decimal("0.5"), Decimal("0.8"), Decimal("0.95"))
         assert isinstance(cfg.social_self.opvr.rate, Decimal)
+
+    def test_2026_limit_matches_spec(self):
+        cfg = load_year(2026).config
+        lim = cfg.simplified.income_limit
+        assert (lim.period, lim.mrp * cfg.mrp_tiyn) == ("half_year", to_tiyn("2595000000"))
 
     def _copy(self, tmp_path: Path, year: int, replace: tuple[str, str], name: str | None = None) -> Path:
         text = (RATES_DIR / f"{year}.yaml").read_text(encoding="utf-8").replace(*replace)
@@ -45,6 +70,11 @@ class TestConfig:
         with pytest.raises(ValueError, match="сумма долей"):
             load_year.__wrapped__(2025, d)
 
+    def test_warning_levels_validated(self, tmp_path):
+        d = self._copy(tmp_path, 2026, ('["0.5", "0.8", "0.95"]', '["0.8", "0.5"]'))
+        with pytest.raises(ValueError, match="limit_warning_levels"):
+            load_year.__wrapped__(2026, d)
+
     def test_year_must_match_filename(self, tmp_path):
         d = self._copy(tmp_path, 2025, ("", ""), name="2024")
         with pytest.raises(ValueError, match="не совпадает"):
@@ -54,103 +84,152 @@ class TestConfig:
         d = self._copy(tmp_path, 2026, ('rate: "0.04"', "rate: 0.04"))
         assert load_year.__wrapped__(2026, d).config.simplified.rate == Decimal("0.04")
 
+    def test_approved_config_has_no_warning(self, tmp_path):
+        d = self._copy(tmp_path, 2026, ("approved_by: null", 'approved_by: "Эксперт А."'))
+        r = calculate_simplified(year=2026, half=1, regions=one(1), config=load_year.__wrapped__(2026, d))
+        assert "CONFIG_NOT_APPROVED" not in codes(r)
+        assert r.trace.config_approved_by == "Эксперт А."
+
 
 class TestSimplified2026:
     def test_basic(self):
-        r = calculate_simplified(year=2026, half=1, income_tiyn=to_tiyn("10000000"))
-        assert r.rate == Decimal("0.04")
+        r = calculate_simplified(year=2026, half=1, regions=one(to_tiyn("10000000")))
         assert r.components_tiyn == {"ipn": to_tiyn("400000")}
         assert r.total_payable_tiyn == to_tiyn("400000")
-        assert codes(r) == ["CONFIG_NOT_VERIFIED"]
+        assert codes(r) == ["CONFIG_NOT_APPROVED"]
 
     def test_rounding_to_tenge(self):
-        r = calculate_simplified(year=2026, half=1, income_tiyn=to_tiyn("1234567.89"))
+        r = calculate_simplified(year=2026, half=1, regions=one(to_tiyn("1234567.89")))
         # 1 234 567,89 × 4% = 49 382,7156 → 49 382,72 (тиын) → 49 383 (тенге)
         assert r.tax_computed_tiyn == 4938272
         assert r.total_payable_tiyn == to_tiyn("49383")
 
     def test_zero_income(self):
-        r = calculate_simplified(year=2026, half=2, income_tiyn=0)
-        assert r.total_payable_tiyn == 0
+        assert calculate_simplified(year=2026, half=2, regions=one(0)).total_payable_tiyn == 0
 
-    def test_maslikhat_rate(self):
-        r = calculate_simplified(year=2026, half=1, income_tiyn=to_tiyn("1000000"), maslikhat_rate=Decimal("0.02"))
+    def test_region_rate(self):
+        r = calculate_simplified(year=2026, half=1, regions=one(to_tiyn("1000000"), "0.02", rate_source="https://example.kz/r"))
         assert r.total_payable_tiyn == to_tiyn("20000")
-        assert "маслихата" in step(r, "rate").description
+        assert step(r, f"region[{ALMATY}].rate").inputs["source"] == "https://example.kz/r"
 
-    @pytest.mark.parametrize("rate", ["0.019", "0.061", "0"])
-    def test_maslikhat_rate_out_of_range(self, rate):
+    def test_missing_region_rate_falls_back_to_base(self):
+        r = calculate_simplified(year=2026, half=1, regions=one(to_tiyn("1000000"), rate=None))
+        assert r.total_payable_tiyn == to_tiyn("40000")
+        assert "REGION_RATE_MISSING" in codes(r)
+
+    @pytest.mark.parametrize("rate", ["0.019", "0.061"])
+    def test_region_rate_out_of_range(self, rate):
         with pytest.raises(TaxInputError, match="вне диапазона"):
-            calculate_simplified(year=2026, half=1, income_tiyn=1, maslikhat_rate=Decimal(rate))
+            calculate_simplified(year=2026, half=1, regions=one(1, rate))
 
-    def test_annual_limit_uses_ytd(self):
-        limit = 600_000 * 432_500
-        ok = calculate_simplified(year=2026, half=2, income_tiyn=limit // 2, ytd_income_before_tiyn=limit // 2)
-        assert "INCOME_LIMIT_EXCEEDED" not in codes(ok)
-        over = calculate_simplified(year=2026, half=2, income_tiyn=limit // 2 + 1, ytd_income_before_tiyn=limit // 2)
-        assert "INCOME_LIMIT_EXCEEDED" in codes(over)
+    def test_several_regions(self):
+        r = calculate_simplified(year=2026, half=1, regions=[
+            RegionIncome(ALMATY, to_tiyn("1000000"), rate=Decimal("0.03")),
+            RegionIncome(ASTANA, to_tiyn("500000"), rate=Decimal("0.05")),
+        ])
+        assert [(x.region_code, x.tax_tiyn) for x in r.regions] == [(ALMATY, to_tiyn("30000")), (ASTANA, to_tiyn("25000"))]
+        assert r.income_tiyn == to_tiyn("1500000")
+        assert r.total_payable_tiyn == to_tiyn("55000")
 
-    def test_vat_threshold(self):
+    def test_duplicate_regions_rejected(self):
+        with pytest.raises(TaxInputError, match="повторяться"):
+            calculate_simplified(year=2026, half=1, regions=one(1) + one(2))
+
+    @pytest.mark.parametrize(
+        ("share", "expected"),
+        [("0.49", []), ("0.5", ["INCOME_LIMIT_50"]), ("0.81", ["INCOME_LIMIT_80"]),
+         ("0.95", ["INCOME_LIMIT_95"]), ("1", ["INCOME_LIMIT_95"])],
+    )
+    def test_limit_warning_levels(self, share, expected):
+        income = int(LIMIT_2026 * Decimal(share))
+        r = calculate_simplified(year=2026, half=1, regions=one(income))
+        assert [c for c in codes(r) if c.startswith("INCOME_LIMIT")] == expected
+        assert r.limit_used == Decimal(share).quantize(Decimal("0.0001"))
+
+    def test_limit_exceeded(self):
+        r = calculate_simplified(year=2026, half=1, regions=one(LIMIT_2026 + 1))
+        assert "INCOME_LIMIT_EXCEEDED" in codes(r)
+        assert not [c for c in codes(r) if c.startswith("INCOME_LIMIT_") and c[-1].isdigit()]
+
+    def test_half_year_limit_ignores_previous_half(self):
+        r = calculate_simplified(year=2026, half=2, regions=one(LIMIT_2026 // 4), ytd_income_before_tiyn=LIMIT_2026)
+        assert not [c for c in codes(r) if c.startswith("INCOME_LIMIT")]
+
+    def test_vat_threshold_is_annual(self):
         threshold = 10_000 * 432_500
-        assert "VAT_THRESHOLD_EXCEEDED" not in codes(calculate_simplified(year=2026, half=1, income_tiyn=threshold))
-        assert "VAT_THRESHOLD_EXCEEDED" in codes(calculate_simplified(year=2026, half=1, income_tiyn=threshold + 1))
+        r = calculate_simplified(year=2026, half=2, regions=one(threshold // 2), ytd_income_before_tiyn=threshold // 2)
+        assert "VAT_THRESHOLD_EXCEEDED" not in codes(r)
+        r = calculate_simplified(year=2026, half=2, regions=one(threshold // 2 + 1), ytd_income_before_tiyn=threshold // 2)
+        assert "VAT_THRESHOLD_EXCEEDED" in codes(r)
+
+    def test_deadlines(self):
+        assert period_deadlines(2026, 1) == {"declaration_910": date(2026, 8, 15), "tax_payment": date(2026, 8, 25)}
+        r = calculate_simplified(year=2026, half=2, regions=one(1))
+        assert r.deadlines == {"declaration_910": date(2027, 2, 15), "tax_payment": date(2027, 2, 25)}
 
 
 class TestSimplified2025:
     def test_split_ipn_sn_and_so_reduction(self):
-        r = calculate_simplified(
-            year=2025, half=1, income_tiyn=to_tiyn("10000000"), so_accrued_tiyn=to_tiyn("50000")
-        )
+        r = calculate_simplified(year=2025, half=1, regions=one(to_tiyn("10000000"), "0.03"), so_accrued_tiyn=to_tiyn("50000"))
         assert r.components_tiyn == {"ipn": to_tiyn("150000"), "sn": to_tiyn("100000")}
         assert r.total_payable_tiyn == to_tiyn("250000")
 
     def test_sn_not_negative(self):
-        r = calculate_simplified(year=2025, half=1, income_tiyn=to_tiyn("100000"), so_accrued_tiyn=to_tiyn("50000"))
-        assert r.components_tiyn["sn"] == 0
-        assert r.components_tiyn["ipn"] == to_tiyn("1500")
+        r = calculate_simplified(year=2025, half=1, regions=one(to_tiyn("100000"), "0.03"), so_accrued_tiyn=to_tiyn("50000"))
+        assert r.components_tiyn == {"ipn": to_tiyn("1500"), "sn": 0}
 
-    def test_half_year_limit_ignores_ytd(self):
-        limit = 24_038 * 393_200
-        r = calculate_simplified(year=2025, half=2, income_tiyn=limit, ytd_income_before_tiyn=limit)
-        assert "INCOME_LIMIT_EXCEEDED" not in codes(r)
-        r = calculate_simplified(year=2025, half=1, income_tiyn=limit + 1)
-        assert "INCOME_LIMIT_EXCEEDED" in codes(r)
+    def test_components_summed_over_regions(self):
+        r = calculate_simplified(year=2025, half=1, regions=[
+            RegionIncome(ALMATY, to_tiyn("1000000"), rate=Decimal("0.02")),
+            RegionIncome(ASTANA, to_tiyn("1000000"), rate=Decimal("0.04")),
+        ])
+        assert r.components_tiyn == {"ipn": to_tiyn("30000"), "sn": to_tiyn("30000")}
 
 
 class TestInputValidation:
     @pytest.mark.parametrize(
         "kwargs",
         [
-            {"income_tiyn": -1},
-            {"income_tiyn": 1.5},
-            {"income_tiyn": True},
-            {"income_tiyn": 1, "so_accrued_tiyn": -1},
-            {"income_tiyn": 1, "half": 3},
-            {"income_tiyn": 1, "half": 1, "ytd_income_before_tiyn": 5},
+            {"regions": one(-1)},
+            {"regions": one(1.5)},
+            {"regions": one(True)},
+            {"regions": []},
+            {"regions": one(1), "so_accrued_tiyn": -1},
+            {"regions": one(1), "half": 3},
+            {"regions": one(1), "half": 1, "ytd_income_before_tiyn": 5},
+            {"regions": [RegionIncome(ALMATY, 10, rate=Decimal("0.04"), items=(IncomeItem("t1", 9),))]},
         ],
     )
     def test_rejects(self, kwargs):
-        params = {"year": 2026, "half": 2} | kwargs
         with pytest.raises(TaxInputError):
-            calculate_simplified(**params)
+            calculate_simplified(**({"year": 2026, "half": 2} | kwargs))
 
     def test_config_year_mismatch(self):
         with pytest.raises(TaxInputError):
-            calculate_simplified(year=2026, half=1, income_tiyn=1, config=load_year(2025))
+            calculate_simplified(year=2026, half=1, regions=one(1), config=load_year(2025))
 
 
 class TestTrace:
     def test_trace_identifies_config_and_is_json(self):
-        r = calculate_simplified(year=2026, half=1, income_tiyn=to_tiyn("500000"))
+        r = calculate_simplified(year=2026, half=1, regions=one(to_tiyn("500000")))
         t = r.trace
-        assert (t.config_year, t.config_version) == (2026, "2026.1")
+        assert (t.config_year, t.config_version, t.config_approved_by) == (2026, "2026.1", None)
         assert t.config_sha256 == load_year(2026).sha256
-        assert t.config_verified is False
         dumped = json.loads(json.dumps(t.to_dict(), ensure_ascii=False))
-        assert [s["code"] for s in dumped["steps"]][:4] == ["income", "rate", "tax_computed", "ipn_computed"]
+        assert dumped["steps"][0]["code"] == f"region[{ALMATY}].income"
+
+    def test_trace_lists_operations(self):
+        items = [IncomeItem("tx-1", to_tiyn("300000")), IncomeItem("tx-2", to_tiyn("200000"))]
+        region = RegionIncome.from_items(ALMATY, items, rate=Decimal("0.04"))
+        r = calculate_simplified(year=2026, half=1, regions=[region])
+        assert r.income_tiyn == to_tiyn("500000")
+        assert r.trace.operations == [
+            {"region": ALMATY, "ref": "tx-1", "amount_tiyn": to_tiyn("300000")},
+            {"region": ALMATY, "ref": "tx-2", "amount_tiyn": to_tiyn("200000")},
+        ]
 
     def test_trace_steps_reproduce_result(self):
-        r = calculate_simplified(year=2025, half=1, income_tiyn=to_tiyn("3000000"), so_accrued_tiyn=to_tiyn("10000"))
+        r = calculate_simplified(year=2025, half=1, regions=one(to_tiyn("3000000"), "0.03"), so_accrued_tiyn=to_tiyn("10000"))
         sn = step(r, "sn_after_so")
         assert sn.inputs == {"computed": to_tiyn("45000"), "so": to_tiyn("10000")}
         assert sn.result == to_tiyn("35000")

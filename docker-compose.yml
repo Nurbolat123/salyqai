@@ -20,6 +20,9 @@ services:
     build: .
     environment:
       SALYQ_DATABASE_URL: postgresql+psycopg://salyq:salyq@db:5432/salyq
+      # Только для локальной разработки! В проде ключи выдаёт KMS / Vault в РК.
+      SALYQ_FIELD_KEY: ZGV2LWZpZWxkLWtleS1kby1ub3QtdXNlLWluLXByb2Q=
+      SALYQ_HMAC_KEY: ZGV2LWhtYWMta2V5LS1kby1ub3QtdXNlLWluLXByb2Q=
     ports:
       - "8000:8000"
     depends_on:

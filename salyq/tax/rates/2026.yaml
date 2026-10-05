@@ -1,10 +1,12 @@
 # Налоговые параметры 2026 года (новый Налоговый кодекс РК, вступил в силу 01.01.2026).
-# ВНИМАНИЕ: verified=false — значения заполнены по открытым источникам и должны
+# Открытый вопрос ТЗ (раздел 7): ставки и базы соцплатежей 2026 и сроки по новому НК
+# подтверждает бухгалтер.
+# ВНИМАНИЕ: approved_by=null — черновик: значения заполнены по открытым источникам и должны
 # быть сверены бухгалтером с НК РК и Законом о республиканском бюджете.
 year: 2026
 version: "2026.1"
 effective_from: "2026-01-01"
-verified: false
+approved_by: null        # заполняет эксперт после сверки (ТЗ 4.4)
 mrp_tiyn: 432500          # МРП 4 325 ₸
 mzp_tiyn: 8500000         # МЗП 85 000 ₸
 
@@ -14,13 +16,19 @@ simplified:
   rate_max: "0.06"
   components:
     - {code: ipn, share: "1"}
-  income_limit: {mrp: 600000, period: year}
+  income_limit: {mrp: 600000, period: half_year}   # 2 595 000 000 ₸ за полугодие (ТЗ 4.4)
+  limit_warning_levels: ["0.5", "0.8", "0.95"]
 
 social_self:
   opv:   {rate: "0.10",  base_min_mzp: "1", base_max_mzp: "50"}
   opvr:  {rate: "0.035", base_min_mzp: "1", base_max_mzp: "50"}
   so:    {rate: "0.05",  base_min_mzp: "1", base_max_mzp: "7"}
   vosms: {rate: "0.05",  fixed_base_mzp: "1.4"}
+
+deadlines:                # смещение от конца периода (полугодия / месяца)
+  declaration_910: {months_after: 2, day: 15}
+  tax_payment:     {months_after: 2, day: 25}
+  social_payments: {months_after: 1, day: 25}
 
 vat_registration_threshold_mrp: 10000
 
