@@ -1,0 +1,29 @@
+# Налоговые параметры 2026 года (новый Налоговый кодекс РК, вступил в силу 01.01.2026).
+# ВНИМАНИЕ: verified=false — значения заполнены по открытым источникам и должны
+# быть сверены бухгалтером с НК РК и Законом о республиканском бюджете.
+year: 2026
+version: "2026.1"
+effective_from: "2026-01-01"
+verified: false
+mrp_tiyn: 432500          # МРП 4 325 ₸
+mzp_tiyn: 8500000         # МЗП 85 000 ₸
+
+simplified:
+  rate: "0.04"            # весь налог — ИПН, социальный налог на упрощёнке не уплачивается
+  rate_min: "0.02"        # маслихат может корректировать ставку на 50%
+  rate_max: "0.06"
+  components:
+    - {code: ipn, share: "1"}
+  income_limit: {mrp: 600000, period: year}
+
+social_self:
+  opv:   {rate: "0.10",  base_min_mzp: "1", base_max_mzp: "50"}
+  opvr:  {rate: "0.035", base_min_mzp: "1", base_max_mzp: "50"}
+  so:    {rate: "0.05",  base_min_mzp: "1", base_max_mzp: "7"}
+  vosms: {rate: "0.05",  fixed_base_mzp: "1.4"}
+
+vat_registration_threshold_mrp: 10000
+
+sources:
+  - "Налоговый кодекс РК от 18.07.2025 (вступает в силу 01.01.2026)"
+  - "Закон РК «О республиканском бюджете на 2026–2028 годы»"

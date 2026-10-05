@@ -1,0 +1,31 @@
+# Налоговые параметры 2025 года (Налоговый кодекс РК в редакции до 01.01.2026).
+# ВНИМАНИЕ: verified=false — значения заполнены по открытым источникам и должны
+# быть сверены бухгалтером с НК РК и Законом о республиканском бюджете.
+year: 2025
+version: "2025.1"
+effective_from: "2025-01-01"
+verified: false
+mrp_tiyn: 393200          # МРП 3 932 ₸
+mzp_tiyn: 8500000         # МЗП 85 000 ₸
+
+simplified:               # СНР на основе упрощённой декларации (ф. 910.00)
+  rate: "0.03"
+  rate_min: "0.015"       # маслихат может уменьшить/увеличить ставку на 50%
+  rate_max: "0.045"
+  components:
+    - {code: ipn, share: "0.5"}
+    - {code: sn, share: "0.5", reduced_by_so: true}
+  income_limit: {mrp: 24038, period: half_year}
+  max_employees: 30
+
+social_self:              # ИП за себя, ежемесячно, база — заявленный доход
+  opv:   {rate: "0.10",  base_min_mzp: "1", base_max_mzp: "50"}
+  opvr:  {rate: "0.025", base_min_mzp: "1", base_max_mzp: "50"}
+  so:    {rate: "0.05",  base_min_mzp: "1", base_max_mzp: "7"}
+  vosms: {rate: "0.05",  fixed_base_mzp: "1.4"}
+
+vat_registration_threshold_mrp: 20000
+
+sources:
+  - "Налоговый кодекс РК (ред. 2024–2025), ст. 687–688"
+  - "Закон РК «О республиканском бюджете на 2025–2027 годы»"
