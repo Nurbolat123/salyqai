@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     ecp_challenge_ttl_seconds: int = 300
     session_ttl_hours: int = 12
 
+    # Локальная LLM (vLLM, OpenAI-совместимый API) в ЦОДе РК. Не задано — разметка только правилами.
+    llm_base_url: str | None = None
+    llm_model: str = "local-model"
+    llm_api_key: str | None = None
+
     @model_validator(mode="after")
     def _no_dev_auth_in_prod(self) -> "Settings":
         if self.environment == "prod" and self.ecp_verifier == "dev":

@@ -21,6 +21,15 @@ def get_verifier(settings: AppSettings) -> EcpVerifier:
     return build_verifier(settings)
 
 
+def get_classifier(settings: AppSettings):
+    """LLM-классификатор, если настроена локальная модель."""
+    from salyq.categorize.llm import OpenAICompatibleClassifier
+
+    if not settings.llm_base_url:
+        return None
+    return OpenAICompatibleClassifier(settings.llm_base_url, settings.llm_model, api_key=settings.llm_api_key)
+
+
 def bearer_token(creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)]) -> str:
     if creds is None:
         raise HTTPException(401, "нужен вход", headers={"WWW-Authenticate": "Bearer"})

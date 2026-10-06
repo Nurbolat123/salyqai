@@ -1,0 +1,29 @@
+# Правила авторазметки. ВНИМАНИЕ: черновик — коды КНП и слова должен проверить
+# бухгалтер (открытый вопрос ТЗ: «какие поступления не являются доходом»).
+#
+# Правило срабатывает, если совпали ВСЕ заданные условия. Из сработавших берётся
+# правило с наибольшей уверенностью.
+version: "draft-1"
+
+rules:
+  # --- платежи в бюджет (по КНП) ---
+  - {code: knp_opv,     direction: out, knp: ["010", "019"], category: social_payments, confidence: 0.97}
+  - {code: knp_so,      direction: out, knp: ["012"],        category: social_payments, confidence: 0.97}
+  - {code: knp_osms,    direction: out, knp: ["121", "122"], category: social_payments, confidence: 0.97}
+  - {code: knp_tax,     direction: out, knp: ["911", "912", "913"], category: taxes, confidence: 0.95}
+
+  # --- по словам в назначении / типе операции ---
+  - {code: kw_social,   direction: out, any_words: ["опв", "пенсионн", "соц. отч", "социальн", "осмс", "восмс"], category: social_payments, confidence: 0.9}
+  - {code: kw_tax,      direction: out, any_words: ["налог", "ипн", "кбк"], category: taxes, confidence: 0.9}
+  - {code: kw_fee,      direction: out, any_words: ["комиссия", "обслуживание счета", "обслуживание счёта"], category: other_expense, confidence: 0.95}
+  - {code: kw_loan,     any_words: ["займ", "заём", "погашение кредита", "выдача кредита"], category: loan, confidence: 0.85}
+  - {code: kw_refund,   any_words: ["возврат"], none_words: ["займ", "заём"], category: refund, confidence: 0.86}
+  - {code: kw_own,      any_words: ["собственных средств", "между своими", "со своего счета", "на свой счет", "пополнение со счета"], category: own_transfer, confidence: 0.9}
+  - {code: kw_sales,    direction: in, any_words: ["kaspi qr", "kaspi pay", "продаж", "оплата по счету", "оплата по счёту", "за услуги", "за товар", "по договору", "эквайринг", "оплата заказа"], none_words: ["возврат"], category: income_sales, confidence: 0.9}
+  - {code: kw_personal, any_words: ["подарок", "на личные", "личный перевод", "перевод между физ"], category: personal_transfer, confidence: 0.8}
+
+  # --- по умолчанию ---
+  # Неизвестное поступление — всегда на проверку: ошибка здесь меняет налог.
+  - {code: default_in,  direction: in,  category: income_sales,  confidence: 0.5}
+  # Расходы на упрощёнке налог не уменьшают, поэтому прочий расход проверять не обязательно.
+  - {code: default_out, direction: out, category: other_expense, confidence: 0.86}

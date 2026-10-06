@@ -170,8 +170,42 @@ class Transaction(Base):
     operation: Mapped[str] = mapped_column(Text, default="")
     category: Mapped[str | None] = mapped_column(String(32))
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    category_source: Mapped[str | None] = mapped_column(String(64))  # код правила | llm | user
     confirmed_by_user: Mapped[bool] = mapped_column(Boolean, default=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    region_code: Mapped[str | None] = mapped_column(String(16))  # если доход не в регионе из профиля
+    amount_kzt_tiyn: Mapped[int | None] = mapped_column(BigInteger)  # сумма в тенге по курсу НБ РК
     fingerprint: Mapped[str] = mapped_column(String(64))  # HMAC ключа дедупликации
+
+
+class CategorizationRule(Base):
+    """Персональное правило: подтверждения пользователя по контрагенту (ТЗ 4.3)."""
+
+    __tablename__ = "categorization_rules"
+    __table_args__ = (
+        UniqueConstraint("user_id", "counterparty_hash", "direction", name="uq_categorization_rules"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    counterparty_hash: Mapped[str] = mapped_column(String(64))
+    direction: Mapped[str] = mapped_column(String(3))
+    category: Mapped[str] = mapped_column(String(32))
+    confirmations: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class FxRate(Base):
+    """Официальный курс НБ РК: сколько тенге за `nominal` единиц валюты на дату."""
+
+    __tablename__ = "fx_rates"
+    __table_args__ = (UniqueConstraint("currency", "rate_date", name="uq_fx_rates"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    currency: Mapped[str] = mapped_column(String(3))
+    rate_date: Mapped[date] = mapped_column(Date)
+    rate: Mapped[Decimal] = mapped_column(Numeric(18, 6))  # тенге за 1 единицу валюты
+    source: Mapped[str] = mapped_column(String(64), default="nationalbank.kz")
 
 
 class RegionRate(Base):

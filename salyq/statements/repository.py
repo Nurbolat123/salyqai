@@ -24,6 +24,7 @@ class ImportResult:
     inserted: int
     duplicates: int  # уже были в БД + дубли внутри файла
     skipped: list[tuple[int, str]]
+    inserted_ids: list[int]
 
 
 def _get_or_create_account(session: Session, user_id: int, bank: str, iban: str) -> BankAccount:
@@ -86,7 +87,7 @@ def save_statement(
         for tx in parsed.transactions
     ]
 
-    inserted = 0
+    inserted_ids: list[int] = []
     insert = pg_insert if session.get_bind().dialect.name == "postgresql" else sqlite_insert
     # Пачками, чтобы не упереться в лимит параметров запроса PostgreSQL (65535)
     for start in range(0, len(values), _BATCH):
@@ -96,7 +97,8 @@ def save_statement(
             .on_conflict_do_nothing(index_elements=["account_id", "fingerprint"])
             .returning(Transaction.__table__.c.id)
         )
-        inserted += len(session.execute(stmt).all())
+        inserted_ids.extend(session.execute(stmt).scalars())
+    inserted = len(inserted_ids)
 
     st.rows_inserted = inserted
     st.rows_duplicate = len(values) - inserted + parsed.duplicates_in_file
@@ -107,4 +109,5 @@ def save_statement(
     return ImportResult(
         statement_id=st.id, account_iban_masked=account.iban_masked, parsed=len(values),
         inserted=inserted, duplicates=st.rows_duplicate, skipped=parsed.skipped_rows,
+        inserted_ids=inserted_ids,
     )

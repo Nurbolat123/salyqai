@@ -2,7 +2,12 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 
-from salyq.api.deps import DbSession, PdUser
+from fastapi import Depends
+from sqlalchemy import select
+
+from salyq.api.deps import DbSession, PdUser, get_classifier
+from salyq.categorize.service import categorize
+from salyq.models import Transaction
 from salyq.settings import get_settings
 from salyq.statements import PARSERS, StatementParseError
 from salyq.statements.repository import save_statement
@@ -17,6 +22,7 @@ async def upload_statement(
     user: PdUser,
     bank: Annotated[str, Form()] = "kaspi",
     account_iban: Annotated[str | None, Form()] = None,
+    classifier=Depends(get_classifier),
 ) -> dict[str, Any]:
     parser = PARSERS.get(bank)
     if parser is None:
@@ -33,6 +39,9 @@ async def upload_statement(
     except StatementParseError as exc:
         session.rollback()
         raise HTTPException(422, str(exc)) from exc
+    if result.inserted_ids:
+        new = session.scalars(select(Transaction).where(Transaction.id.in_(result.inserted_ids))).all()
+        categorize(session, user, new, classifier)
     return {
         "statement_id": result.statement_id, "account": result.account_iban_masked,
         "period_from": parsed.period_from, "period_to": parsed.period_to, "parsed": result.parsed,
