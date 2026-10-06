@@ -262,3 +262,32 @@ class TaxCalculation(Base):
     inputs_hash: Mapped[str] = mapped_column(String(64))  # одинаковые входные данные — тот же расчёт
     trace_json: Mapped[dict] = mapped_column(_Json)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Declaration910(Base):
+    """Декларация 910.00: draft → checked → signed → exported (ТЗ 4.5).
+
+    Новый черновик за тот же период переводит прежние неподписанные в superseded.
+    """
+
+    __tablename__ = "declarations_910"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft', 'checked', 'signed', 'exported', 'superseded')", name="ck_declarations_910_status"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    period: Mapped[str] = mapped_column(String(7))
+    calculation_id: Mapped[int] = mapped_column(ForeignKey("tax_calculations.id"))
+    payload_json: Mapped[dict] = mapped_column(_Json)
+    payload_sha256: Mapped[str] = mapped_column(String(64))
+    checks_json: Mapped[list] = mapped_column(_Json)
+    status: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expert_reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    expert_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    signature: Mapped[str | None] = mapped_column(EncryptedText)  # CMS содержит сертификат с ИИН
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    exported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -6,6 +6,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from salyq import models  # noqa: F401  — регистрирует таблицы в Base.metadata
+from salyq.crypto import EncryptedText
 from salyq.db import Base
 from salyq.settings import get_settings
 
@@ -19,10 +20,18 @@ if not config.get_main_option("sqlalchemy.url"):
 target_metadata = Base.metadata
 
 
+def render_item(type_, obj, autogen_context):
+    """Зашифрованные колонки в миграциях — просто Text: миграции не зависят от кода приложения."""
+    if type_ == "type" and isinstance(obj, EncryptedText):
+        return "sa.Text()"
+    return False
+
+
 def run_migrations_offline() -> None:
     context.configure(
         url=config.get_main_option("sqlalchemy.url"), target_metadata=target_metadata,
         literal_binds=True, dialect_opts={"paramstyle": "named"}, compare_type=True,
+        render_item=render_item,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -41,7 +50,8 @@ def run_migrations_online() -> None:
 
 
 def _run(connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True,
+                      render_item=render_item)
     with context.begin_transaction():
         context.run_migrations()
 

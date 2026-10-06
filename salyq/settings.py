@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     llm_model: str = "local-model"
     llm_api_key: str | None = None
 
+    # Пилот: эксперт проверяет каждую 910.00 до подписи (ТЗ 7)
+    declaration_expert_review: bool = True
+
     @model_validator(mode="after")
     def _no_dev_auth_in_prod(self) -> "Settings":
         if self.environment == "prod" and self.ecp_verifier == "dev":
