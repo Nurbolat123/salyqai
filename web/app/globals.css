@@ -1,0 +1,84 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #16181d;
+  --muted: #5d6470;
+  --border: #e2e5ea;
+  --accent: #0b6e4f;
+  --accent-contrast: #ffffff;
+  --warn-bg: #fff6e0;
+  --warn: #8a5a00;
+  --error-bg: #fdecec;
+  --error: #a32020;
+  --ok: #0b6e4f;
+  --radius: 10px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111317;
+    --surface: #1a1d23;
+    --text: #e8eaed;
+    --muted: #9aa1ab;
+    --border: #2c3038;
+    --accent: #3fbf8f;
+    --accent-contrast: #0b1a14;
+    --warn-bg: #2e2510;
+    --warn: #f0c060;
+    --error-bg: #351a1a;
+    --error: #ff8a80;
+    --ok: #3fbf8f;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--font); }
+a { color: var(--accent); }
+h1 { font-size: 24px; margin: 0 0 16px; }
+h2 { font-size: 18px; margin: 24px 0 12px; }
+.layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+.nav { background: var(--surface); border-right: 1px solid var(--border); padding: 20px 12px; display: flex; flex-direction: column; gap: 2px; }
+.nav .brand { font-weight: 700; font-size: 18px; padding: 0 10px 16px; }
+.nav a { color: var(--text); text-decoration: none; padding: 8px 10px; border-radius: 8px; }
+.nav a.active, .nav a:hover { background: var(--bg); }
+.nav .spacer { flex: 1; }
+.main { padding: 28px 32px; max-width: 1100px; width: 100%; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 16px; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.stat .label { color: var(--muted); font-size: 13px; }
+.stat .value { font-size: 22px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+button, .button { font: inherit; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 8px; padding: 8px 14px; cursor: pointer; text-decoration: none; display: inline-block; }
+button.primary, .button.primary { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+button:disabled { opacity: .55; cursor: default; }
+input, select, textarea { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+textarea { width: 100%; min-height: 90px; }
+label.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; max-width: 420px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: 13px; }
+.notice { border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+.notice.warn { background: var(--warn-bg); color: var(--warn); }
+.notice.error { background: var(--error-bg); color: var(--error); }
+.badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--bg); border: 1px solid var(--border); }
+.badge.ok { color: var(--ok); }
+.badge.bad { color: var(--error); }
+.bar { height: 8px; background: var(--bg); border-radius: 99px; overflow: hidden; border: 1px solid var(--border); }
+.bar > div { height: 100%; background: var(--accent); }
+.tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.tabs button.active { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+.chat { display: flex; flex-direction: column; gap: 10px; }
+.msg { padding: 10px 14px; border-radius: 10px; max-width: 80%; white-space: pre-wrap; }
+.msg.user { align-self: flex-end; background: var(--accent); color: var(--accent-contrast); }
+.msg.assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); }
+@media (max-width: 760px) {
+  .layout { grid-template-columns: 1fr; }
+  .nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border); padding: 10px 16px; }
+  .nav .brand { padding: 8px 10px; }
+  .nav .spacer { display: none; }
+  .main { padding: 20px 16px; }
+  .msg { max-width: 95%; }
+  table { display: block; overflow-x: auto; }
+}

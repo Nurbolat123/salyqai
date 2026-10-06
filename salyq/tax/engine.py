@@ -164,7 +164,7 @@ def calculate_simplified(
                           "simplified.rate", reg.rate)
             warnings.append(TaxWarning(
                 "REGION_RATE_MISSING",
-                f"Для региона {r.region_code} нет ставки маслихата в справочнике — применена базовая {reg.rate}.",
+                f"Для региона {r.region_code} нет ставки маслихата в справочнике — применена базовая {reg.rate * 100:g}%.",
             ))
         else:
             if not reg.rate_min <= r.rate <= reg.rate_max:

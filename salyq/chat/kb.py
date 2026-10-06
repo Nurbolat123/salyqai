@@ -46,7 +46,9 @@ def load(kb_dir: Path = KB_DIR) -> tuple[Article, ...]:
         _, front, body = path.read_text(encoding="utf-8").split("---", 2)
         meta = yaml.safe_load(front)
         out.append(Article(path.stem, meta["title"], bool(meta.get("verified")),
-                           tuple(t.strip() for t in str(meta.get("tags", "")).split(",")), body.strip()))
+                           tuple(t.strip() for t in str(meta.get("tags", "")).split(",")),
+                           # переносы строк внутри абзаца — только для удобства редактирования
+                           "\n\n".join(" ".join(p.split()) for p in body.strip().split("\n\n"))))
     return tuple(out)
 
 
