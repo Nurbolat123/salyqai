@@ -16,6 +16,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "pdfplumber>=0.11",
     "cryptography>=43",
+    "celery[redis]>=5.4",
 ]
 
 [project.optional-dependencies]

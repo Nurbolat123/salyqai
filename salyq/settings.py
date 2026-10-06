@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     llm_model: str = "local-model"
     llm_api_key: str | None = None
 
+    # Напоминания (ТЗ 4.6)
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_sender: str = "Salyq <noreply@salyq.kz>"
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    telegram_bot_token: str | None = None
+    redis_url: str = "redis://localhost:6379/0"
+
     # Пилот: эксперт проверяет каждую 910.00 до подписи (ТЗ 7)
     declaration_expert_review: bool = True
 

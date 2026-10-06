@@ -59,3 +59,12 @@ def require_consent(consent_type: str):
 
 
 PdUser = Annotated[User, Depends(require_consent("pd_processing"))]
+
+
+def require_expert(user: CurrentUser) -> User:
+    if user.role != "expert":
+        raise HTTPException(403, "только для эксперта")
+    return user
+
+
+ExpertUser = Annotated[User, Depends(require_expert)]

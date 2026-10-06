@@ -43,3 +43,20 @@ def update_me(body: ProfileUpdate, user: CurrentUser, session: DbSession) -> dic
                      object_type="user", object_id=user.id, fields=sorted(changes))
     session.commit()
     return profile(user)
+
+
+class NotificationsIn(BaseModel):
+    email: str | None = Field(None, pattern=r"^([^@\s]+@[^@\s]+\.[^@\s]+)?$")
+    telegram_chat_id: str | None = Field(None, pattern=r"^(-?\d{1,20})?$")
+    push_token: str | None = Field(None, max_length=4096)
+
+
+@router.patch("/notifications")
+def update_notifications(body: NotificationsIn, user: CurrentUser, session: DbSession) -> dict[str, bool]:
+    """Каналы напоминаний (ТЗ 4.6). Пустая строка отключает канал."""
+    changes = body.model_dump(exclude_unset=True)
+    for key, value in changes.items():
+        setattr(user, key, value or None)
+    audit.record(session, "profile.notifications", actor_type="user", actor_id=user.id, fields=sorted(changes))
+    session.commit()
+    return {"email": bool(user.email), "telegram": bool(user.telegram_chat_id), "push": bool(user.push_token)}

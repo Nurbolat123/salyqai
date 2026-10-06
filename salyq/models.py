@@ -55,6 +55,10 @@ class User(Base):
     # Заявленный ежемесячный доход для соцплатежей за себя; None — минимальный (1 МЗП)
     declared_income_tiyn: Mapped[int | None] = mapped_column(BigInteger)
     role: Mapped[str] = mapped_column(String(16), default="client", server_default="client")  # client | expert
+    # Каналы напоминаний (ТЗ 4.6); зашифрованы как ПДн
+    email: Mapped[str | None] = mapped_column(EncryptedText)
+    telegram_chat_id: Mapped[str | None] = mapped_column(EncryptedText)
+    push_token: Mapped[str | None] = mapped_column(EncryptedText)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -291,3 +295,64 @@ class Declaration910(Base):
     signature: Mapped[str | None] = mapped_column(EncryptedText)  # CMS содержит сертификат с ИИН
     signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     exported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Objection(Base):
+    """Возражение по ст. 19-1 Закона № 94-V: рассмотреть за 3 рабочих дня (ТЗ 2, 4.8)."""
+
+    __tablename__ = "objections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    subject_ref: Mapped[str] = mapped_column(String(64))  # transaction:12 | tax_calculation:5 | declaration_910:3
+    text: Mapped[str] = mapped_column(EncryptedText)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    resolution: Mapped[str | None] = mapped_column(EncryptedText)
+
+
+class ExpertAccess(Base):
+    """Доступ эксперта к данным клиента — только по обращению и на время (ТЗ 4.8, 6)."""
+
+    __tablename__ = "expert_access"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    expert_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    reason_ref: Mapped[str] = mapped_column(String(64))  # objection:7 | question:3 | declaration_910:2
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Reminder(Base):
+    """Напоминание о сроке (ТЗ 4.6). Уникально по пользователю, сроку, дню отправки и каналу."""
+
+    __tablename__ = "reminders"
+    __table_args__ = (
+        UniqueConstraint("user_id", "kind", "due_date", "remind_on", "channel", name="uq_reminders"),
+    )
+
+    id: Mapped[int] = mapped_column(_BigId, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))  # declaration_910 | tax_payment | social_payments
+    due_date: Mapped[date] = mapped_column(Date)
+    remind_on: Mapped[date] = mapped_column(Date, index=True)
+    channel: Mapped[str] = mapped_column(String(16))  # push | email | telegram
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class ExpertQuestion(Base):
+    """Вопрос клиента эксперту («Передать эксперту» из чата, ТЗ 4.7, 4.8)."""
+
+    __tablename__ = "expert_questions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    text: Mapped[str] = mapped_column(EncryptedText)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    answer: Mapped[str | None] = mapped_column(EncryptedText)

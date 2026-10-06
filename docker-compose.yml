@@ -16,10 +16,14 @@ services:
       timeout: 3s
       retries: 20
 
+  redis:
+    image: redis:7-alpine
+
   api:
     build: .
-    environment:
+    environment: &app_env
       SALYQ_DATABASE_URL: postgresql+psycopg://salyq:salyq@db:5432/salyq
+      SALYQ_REDIS_URL: redis://redis:6379/0
       # Только для локальной разработки! В проде ключи выдаёт KMS / Vault в РК.
       SALYQ_FIELD_KEY: ZGV2LWZpZWxkLWtleS1kby1ub3QtdXNlLWluLXByb2Q=
       SALYQ_HMAC_KEY: ZGV2LWhtYWMta2V5LS1kby1ub3QtdXNlLWluLXByb2Q=
@@ -28,6 +32,15 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  # Напоминания и курсы НБ РК по расписанию (Celery beat + worker)
+  worker:
+    build: .
+    environment: *app_env
+    command: ["celery", "-A", "salyq.worker", "worker", "-B", "--loglevel=info"]
+    depends_on:
+      - api
+      - redis
 
   # docker compose run --rm tests
   tests:
