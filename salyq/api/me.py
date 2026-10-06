@@ -16,6 +16,7 @@ def profile(user: User) -> dict[str, Any]:
         "id": user.id, "full_name": user.full_name, "iin_masked": f"{user.iin[:2]}••••••••{user.iin[-2:]}",
         "region_code": user.region_code, "activity_code": user.activity_code,
         "ip_registered_on": user.ip_registered_on, "employees_count": user.employees_count,
+        "declared_income_tiyn": user.declared_income_tiyn, "role": user.role,
     }
 
 
@@ -24,6 +25,7 @@ class ProfileUpdate(BaseModel):
     activity_code: str | None = Field(None, pattern=r"^\d{5}$")  # ОКЭД
     ip_registered_on: date | None = None
     employees_count: int | None = Field(None, ge=0)
+    declared_income_tiyn: int | None = Field(None, ge=0)  # заявленный доход в месяц для соцплатежей
 
 
 @router.get("")

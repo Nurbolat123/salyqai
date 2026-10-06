@@ -52,6 +52,9 @@ class User(Base):
     activity_code: Mapped[str | None] = mapped_column(String(16))  # ОКЭД
     ip_registered_on: Mapped[date | None] = mapped_column(Date)
     employees_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Заявленный ежемесячный доход для соцплатежей за себя; None — минимальный (1 МЗП)
+    declared_income_tiyn: Mapped[int | None] = mapped_column(BigInteger)
+    role: Mapped[str] = mapped_column(String(16), default="client", server_default="client")  # client | expert
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -223,3 +226,39 @@ class RegionRate(Base):
     rate: Mapped[Decimal] = mapped_column(Numeric(6, 4))
     valid_from: Mapped[date] = mapped_column(Date)
     source_url: Mapped[str] = mapped_column(Text)
+
+
+class TaxConfigVersion(Base):
+    """Версия налоговой конфигурации года в БД. Действует последняя утверждённая
+    экспертом (ТЗ 4.4, 4.8); пока таких нет — черновик из salyq/tax/rates/<год>.yaml."""
+
+    __tablename__ = "tax_config_versions"
+    __table_args__ = (UniqueConstraint("year", "version", name="uq_tax_config_versions"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    year: Mapped[int] = mapped_column(Integer, index=True)
+    version: Mapped[str] = mapped_column(String(32))
+    raw_yaml: Mapped[str] = mapped_column(Text)
+    sha256: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16))  # draft | approved
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    approved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TaxCalculation(Base):
+    """Сохранённый расчёт со «следом» для экрана «Как посчитано» (ТЗ 4.4, ст. 43 ЦК)."""
+
+    __tablename__ = "tax_calculations"
+
+    id: Mapped[int] = mapped_column(_BigId, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    period: Mapped[str] = mapped_column(String(7))  # 2026H2
+    income_tiyn: Mapped[int] = mapped_column(BigInteger)
+    tax_tiyn: Mapped[int] = mapped_column(BigInteger)
+    config_version: Mapped[str] = mapped_column(String(32))
+    config_sha256: Mapped[str] = mapped_column(String(64))
+    inputs_hash: Mapped[str] = mapped_column(String(64))  # одинаковые входные данные — тот же расчёт
+    trace_json: Mapped[dict] = mapped_column(_Json)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

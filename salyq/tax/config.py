@@ -115,13 +115,25 @@ class ConfigNotFound(LookupError):
     pass
 
 
-def _parse(raw: bytes, path: Path) -> LoadedConfig:
+def parse_config(raw: bytes, source: str, expected_year: int | None = None) -> LoadedConfig:
+    """YAML конфигурации года → проверенный LoadedConfig. sha256 считается от исходного текста."""
     data = yaml.safe_load(raw)
+    if not isinstance(data, dict):
+        raise ValueError(f"{source}: ожидается YAML-словарь")
     # YAML может прочитать 0.04 как float; приводим к строке, чтобы Decimal был точным.
     cfg = TaxYearConfig.model_validate(_floats_to_str(data))
-    if cfg.year != int(path.stem):
-        raise ValueError(f"{path.name}: year={cfg.year} не совпадает с именем файла")
-    return LoadedConfig(config=cfg, sha256=hashlib.sha256(raw).hexdigest(), path=path.name)
+    if expected_year is not None and cfg.year != expected_year:
+        raise ValueError(f"{source}: year={cfg.year} не совпадает с ожидаемым {expected_year}")
+    return LoadedConfig(config=cfg, sha256=hashlib.sha256(raw).hexdigest(), path=source)
+
+
+def _parse(raw: bytes, path: Path) -> LoadedConfig:
+    try:
+        return parse_config(raw, path.name, int(path.stem))
+    except ValueError as exc:
+        if "не совпадает с ожидаемым" in str(exc):
+            raise ValueError(f"{path.name}: year не совпадает с именем файла") from exc
+        raise
 
 
 def _floats_to_str(obj):
