@@ -37,9 +37,10 @@ class TestSettings:
         with pytest.raises(ValueError, match="запрещён"):
             Settings(environment="prod", ecp_verifier="dev")
 
-    def test_ncanode_not_implemented_yet(self):
-        with pytest.raises(NotImplementedError):
+    def test_ncanode_needs_url(self):
+        with pytest.raises(ValueError, match="NCANODE_URL"):
             build_verifier(Settings(ecp_verifier="ncanode"))
+        assert build_verifier(Settings(ecp_verifier="ncanode", ncanode_url="http://n:14579")).url == "http://n:14579"
 
 
 class TestLogin:

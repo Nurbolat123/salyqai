@@ -1,12 +1,11 @@
 """Каналы напоминаний (ТЗ 4.6). Текст напоминаний не содержит персональных данных:
 Telegram и почтовые сервисы могут находиться за пределами РК."""
 
-import json
 import smtplib
-import urllib.request
 from email.message import EmailMessage
 from typing import Protocol
 
+from salyq.http import post_json
 from salyq.models import User
 from salyq.settings import Settings
 
@@ -65,11 +64,9 @@ class TelegramNotifier:
         return user.telegram_chat_id
 
     def send(self, address: str, subject: str, text: str) -> None:  # pragma: no cover — сеть
-        body = json.dumps({"chat_id": address, "text": f"{subject}\n\n{text}"}).encode()
-        req = urllib.request.Request(self.url, data=body, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
-            if resp.status != 200:
-                raise NotifyError(f"Telegram ответил {resp.status}")
+        answer = post_json(self.url, {"chat_id": address, "text": f"{subject}\n\n{text}"}, timeout=15)
+        if not answer.get("ok"):
+            raise NotifyError(f"Telegram ответил ошибкой: {answer.get('description', '')}")
 
 
 def build_notifiers(settings: Settings) -> list[Notifier]:

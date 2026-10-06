@@ -18,6 +18,8 @@ class Settings(BaseSettings):
 
     # Проверка подписи ЭЦП: "dev" — заглушка без криптографии, только для разработки
     ecp_verifier: Literal["dev", "ncanode"] = "dev"
+    ncanode_url: str | None = None  # например http://ncanode:14579
+    ncanode_timeout_seconds: float = 10.0
     ecp_challenge_ttl_seconds: int = 300
     session_ttl_hours: int = 12
 
@@ -40,6 +42,10 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     telegram_bot_token: str | None = None
     redis_url: str = "redis://localhost:6379/0"
+
+    # Наблюдаемость и веб-клиент
+    sentry_dsn: str | None = None  # self-hosted Sentry в РК
+    cors_origins: list[str] = ["http://localhost:3000"]
 
     # Пилот: эксперт проверяет каждую 910.00 до подписи (ТЗ 7)
     declaration_expert_review: bool = True

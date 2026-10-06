@@ -16,7 +16,14 @@ from salyq.auth.clock import utcnow
 from salyq.categorize.service import user_transactions
 from salyq.declarations import service as declarations
 from salyq.models import (
-    BankAccount, Declaration910, ExpertQuestion, Objection, RegionRate, TaxConfigVersion, Transaction, User,
+    BankAccount,
+    Declaration910,
+    ExpertQuestion,
+    Objection,
+    RegionRate,
+    TaxConfigVersion,
+    Transaction,
+    User,
 )
 from salyq.tax import config_store
 from salyq.tax.config import ConfigNotFound

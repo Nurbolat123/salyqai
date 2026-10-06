@@ -6,11 +6,11 @@
 """
 
 import json
-import urllib.request
 from typing import Protocol
 
 from salyq.categorize.categories import CATEGORIES, allowed
 from salyq.categorize.rules import Suggestion
+from salyq.http import post_json
 from salyq.privacy import Anonymizer
 
 PROMPT = """Ты помощник бухгалтера ИП на упрощённой декларации в Казахстане.
@@ -31,17 +31,13 @@ class OpenAICompatibleClassifier:
         self.model, self.timeout, self.api_key = model, timeout, api_key
 
     def _complete(self, prompt: str) -> str:
-        body = json.dumps({
+        body = {
             "model": self.model, "temperature": 0,
             "messages": [{"role": "user", "content": prompt}],
             "response_format": {"type": "json_object"},
-        }).encode()
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        req = urllib.request.Request(self.url, data=body, headers=headers)
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # noqa: S310 — URL из настроек
-            return json.load(resp)["choices"][0]["message"]["content"]
+        }
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        return post_json(self.url, body, timeout=self.timeout, headers=headers)["choices"][0]["message"]["content"]
 
     def classify(self, *, direction: str, knp: str, text: str) -> Suggestion | None:
         safe_text = Anonymizer().anonymize(text).text

@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: salyq
+          POSTGRES_PASSWORD: salyq
+          POSTGRES_DB: salyq_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U salyq" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://salyq:salyq@localhost:5432/salyq_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: Линтер
+        run: ruff check salyq tests migrations/env.py
+      - name: Тесты (SQLite + PostgreSQL, схема из миграций)
+        run: pytest -q
+      - name: Миграции совпадают с моделями
+        env:
+          SALYQ_DATABASE_URL: postgresql+psycopg://salyq:salyq@localhost:5432/salyq_test
+          SALYQ_FIELD_KEY: Y2ktZmllbGQta2V5LTMyLWJ5dGVzLWxvbmctLS0tLS0=
+          SALYQ_HMAC_KEY: Y2ktaG1hYy1rZXktMzItYnl0ZXMtbG9uZy0tLS0tLS0=
+        run: |
+          psql postgresql://salyq:salyq@localhost:5432/salyq_test -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public"
+          alembic upgrade head
+          alembic check

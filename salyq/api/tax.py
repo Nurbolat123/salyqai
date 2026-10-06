@@ -9,10 +9,10 @@ from salyq.api.deps import CurrentUser, PdUser
 from salyq.auth.clock import utcnow
 from salyq.db import get_session
 from salyq.models import TaxCalculation
-from salyq.tax.summary import PeriodError, current_period, explain, parse_period, tax_summary
 from salyq.tax import ConfigNotFound, TaxInputError, available_years, calculate_self_social, calculate_simplified
 from salyq.tax.config_store import active_config
 from salyq.tax.region_rates import region_income
+from salyq.tax.summary import PeriodError, current_period, explain, parse_period, tax_summary
 
 router = APIRouter(prefix="/tax", tags=["tax"])
 

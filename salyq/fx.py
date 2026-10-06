@@ -5,14 +5,15 @@
 официальной ленты Нацбанка; при разметке используется только таблица.
 """
 
-import urllib.request
-import xml.etree.ElementTree as ET
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
+from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from salyq.http import get_text
 from salyq.models import FxRate
 
 NBK_URL = "https://nationalbank.kz/rss/get_rates.cfm?fdate={d:%d.%m.%Y}"
@@ -26,7 +27,7 @@ def parse_nbk_rates(xml_text: str) -> dict[str, Decimal]:
     """XML ленты НБ РК → {валюта: тенге за 1 единицу}. В ленте курс может быть за quant единиц."""
     try:
         root = ET.fromstring(xml_text)
-    except ET.ParseError as exc:
+    except (ET.ParseError, DefusedXmlException) as exc:
         raise FxError(f"некорректный XML курсов: {exc}") from exc
     rates: dict[str, Decimal] = {}
     for item in root.iter("item"):
@@ -49,8 +50,7 @@ def store_rates(session: Session, rate_date: date, rates: dict[str, Decimal], so
 
 
 def fetch_and_store(session: Session, rate_date: date, timeout: float = 15.0) -> int:  # pragma: no cover — сеть
-    with urllib.request.urlopen(NBK_URL.format(d=rate_date), timeout=timeout) as resp:  # noqa: S310
-        return store_rates(session, rate_date, parse_nbk_rates(resp.read().decode("utf-8")))
+    return store_rates(session, rate_date, parse_nbk_rates(get_text(NBK_URL.format(d=rate_date), timeout=timeout)))
 
 
 def get_rate(session: Session, currency: str, on_date: date) -> Decimal | None:

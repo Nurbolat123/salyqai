@@ -8,7 +8,7 @@ from salyq.auth import consents
 from salyq.auth.ecp import DevEcpVerifier
 from salyq.categorize import service as cat
 from salyq.declarations import service
-from salyq.models import AuditLog, Declaration910
+from salyq.models import AuditLog
 from salyq.settings import Settings
 from salyq.statements import parse_kaspi_statement
 from salyq.statements.repository import save_statement

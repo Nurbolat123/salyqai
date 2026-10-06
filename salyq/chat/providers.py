@@ -1,9 +1,10 @@
 """LLM-провайдеры чата (OpenAI-совместимый API: vLLM в ЦОДе РК или внешний с ZDR)."""
 
 import json
-import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+
+from salyq.http import post_json
 
 
 class LLMError(RuntimeError):
@@ -38,13 +39,9 @@ class OpenAICompatibleProvider:
         body = {"model": self.model, "temperature": 0.2, "messages": messages}
         if tools:
             body["tools"] = tools
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        req = urllib.request.Request(self.url, data=json.dumps(body).encode(), headers=headers)
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # noqa: S310 — URL из настроек
-                msg = json.load(resp)["choices"][0]["message"]
+            msg = post_json(self.url, body, timeout=self.timeout, headers=headers)["choices"][0]["message"]
         except Exception as exc:
             raise LLMError(f"модель недоступна: {exc}") from exc
         calls = [

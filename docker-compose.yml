@@ -42,6 +42,16 @@ services:
       - api
       - redis
 
+  # Проверка подписей ЭЦП (НУЦ РК). Включение: docker compose --profile ecp up,
+  # а в api — SALYQ_ECP_VERIFIER=ncanode и SALYQ_NCANODE_URL=http://ncanode:14579.
+  # Имя образа и порт сверить с документацией NCANode; для тестов нужны тестовые
+  # корневые сертификаты с pki.gov.kz.
+  ncanode:
+    image: ${NCANODE_IMAGE:-malikzh/ncanode}
+    profiles: ["ecp"]
+    ports:
+      - "14579:14579"
+
   # docker compose run --rm tests
   tests:
     build: .

@@ -9,7 +9,7 @@ from salyq import expert_access, objections
 from salyq.auth import consents
 from salyq.auth.clock import utcnow
 from salyq.cli import make_expert
-from salyq.models import AuditLog, ExpertQuestion, Reminder, TaxCalculation
+from salyq.models import AuditLog, ExpertQuestion, Reminder
 from salyq.reminders.notifiers import MemoryNotifier
 from salyq.reminders.service import message, run, upcoming
 from salyq.tax.config import RATES_DIR

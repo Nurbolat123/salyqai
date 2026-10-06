@@ -1,8 +1,6 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Form, HTTPException, UploadFile
-
-from fastapi import Depends
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from sqlalchemy import select
 
 from salyq.api.deps import DbSession, PdUser, get_classifier

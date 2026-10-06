@@ -11,9 +11,9 @@ def kz_id_checksum_ok(value: str) -> bool:
     if len(value) != 12 or not value.isdigit():
         return False
     d = [int(c) for c in value]
-    control = sum(a * b for a, b in zip(d, _W1)) % 11
+    control = sum(a * b for a, b in zip(d[:11], _W1, strict=True)) % 11
     if control == 10:
-        control = sum(a * b for a, b in zip(d, _W2)) % 11
+        control = sum(a * b for a, b in zip(d[:11], _W2, strict=True)) % 11
         if control == 10:
             return False
     return control == d[11]

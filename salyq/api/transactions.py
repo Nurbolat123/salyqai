@@ -2,7 +2,6 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 
 from salyq.api.deps import DbSession, PdUser, get_classifier
 from salyq.categorize import service

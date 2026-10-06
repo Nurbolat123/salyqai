@@ -23,7 +23,7 @@ from salyq.categorize.service import user_transactions
 from salyq.models import TaxCalculation, Transaction, User
 from salyq.money import mul_rate
 from salyq.tax.config_store import active_config
-from salyq.tax.engine import IncomeItem, RegionIncome, calculate_self_social, calculate_simplified, period_deadlines
+from salyq.tax.engine import IncomeItem, RegionIncome, calculate_self_social, calculate_simplified
 from salyq.tax.region_rates import find_region_rate
 
 NO_REGION = "не указан"

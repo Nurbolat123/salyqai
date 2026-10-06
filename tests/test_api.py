@@ -68,3 +68,11 @@ def test_statements_and_privacy_need_login_and_consent(anon):
     r = anon.post("/api/v1/statements", files=files)
     assert r.status_code == 403
     assert r.json()["detail"]["code"] == "CONSENT_REQUIRED"
+
+
+def test_metrics_and_cors(client):
+    client.get("/health")
+    body = client.get("/metrics").text
+    assert 'salyq_http_requests_total{method="GET",route="/health",status="200"}' in body
+    r = client.options("/api/v1/me", headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "GET"})
+    assert r.headers["access-control-allow-origin"] == "http://localhost:3000"
