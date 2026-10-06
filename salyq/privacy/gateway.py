@@ -61,10 +61,11 @@ def _build_person_patterns() -> list[re.Pattern[str]]:
 
 _PERSON_PATTERNS = _build_person_patterns()
 _ANY_WORD = rf"(?:[{UP}][{LO}]+|[{UP}]{{2,}})(?:-(?:[{UP}][{LO}]+|[{UP}]{{2,}}))?"
+# Без учёта регистра — только слова контекста; имя обязано начинаться с заглавной,
+# иначе «ИП на упрощённой декларации» принималось за ФИО.
 _CONTEXT_PERSON = re.compile(
-    rf"(?:(?<![\w{UP}{LO}])(?:{_alt(_CONTEXT_WORDS)}))[\s:]+"
-    rf"(?P<name>{_ANY_WORD}(?:\s+{_ANY_WORD}){{0,2}}(?:\s+[{UP}]\.\s?(?:[{UP}]\.)?)?)",
-    re.IGNORECASE,
+    rf"(?:(?<![\w{UP}{LO}])(?i:{_alt(_CONTEXT_WORDS)}))[\s:]+"
+    rf"(?P<name>{_ANY_WORD}(?:\s+{_ANY_WORD}){{0,2}}(?:\s+[{UP}]\.\s?(?:[{UP}]\.)?)?)"
 )
 
 _EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+")

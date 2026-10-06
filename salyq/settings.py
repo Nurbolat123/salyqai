@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     llm_model: str = "local-model"
     llm_api_key: str | None = None
 
+    # Внешняя LLM для чата — только с согласием на трансграничную передачу и через
+    # шлюз обезличивания; только провайдер с zero data retention (ТЗ 6)
+    external_llm_base_url: str | None = None
+    external_llm_model: str = ""
+    external_llm_api_key: str | None = None
+
     # Напоминания (ТЗ 4.6)
     smtp_host: str | None = None
     smtp_port: int = 587

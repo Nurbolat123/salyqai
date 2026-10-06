@@ -356,3 +356,17 @@ class ExpertQuestion(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resolved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     answer: Mapped[str | None] = mapped_column(EncryptedText)
+
+
+class ChatMessage(Base):
+    """Сообщения AI-чата (ТЗ 4.7). Текст зашифрован; meta — какие инструменты и статьи
+    использованы и какая модель отвечала (локальная / внешняя)."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(_BigId, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    role: Mapped[str] = mapped_column(String(16))  # user | assistant
+    content: Mapped[str] = mapped_column(EncryptedText)
+    meta: Mapped[dict] = mapped_column(_Json, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
