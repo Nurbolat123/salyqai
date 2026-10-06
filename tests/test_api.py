@@ -1,35 +1,11 @@
 from datetime import date
 from decimal import Decimal
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
-from sqlalchemy.pool import StaticPool
 
-from salyq.db import Base, get_session
-from salyq.main import create_app
 from salyq.models import RegionRate
+from tests.test_auth import login_as
 from tests.test_kaspi_statement import FIXTURE, PDF_FIXTURE
-
-
-@pytest.fixture
-def engine():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine)
-    return engine
-
-
-@pytest.fixture
-def client(engine):
-    app = create_app(init_db=False)
-
-    def _session():
-        with Session(engine, expire_on_commit=False) as s:
-            yield s
-
-    app.dependency_overrides[get_session] = _session
-    return TestClient(app)
 
 
 def test_health(client):
@@ -82,3 +58,13 @@ def test_upload_errors(client):
     assert bad.status_code == 422
     other_bank = client.post("/api/v1/statements", files={"file": ("x.csv", b"", "text/csv")}, data={"bank": "halyk"})
     assert other_bank.status_code == 422 and "halyk" in other_bank.json()["detail"]
+
+
+def test_statements_and_privacy_need_login_and_consent(anon):
+    files = {"file": (FIXTURE.name, FIXTURE.read_bytes(), "text/csv")}
+    assert anon.post("/api/v1/statements", files=files).status_code == 401
+    assert anon.post("/api/v1/privacy/anonymize", json={"text": "x"}).status_code == 401
+    login_as(anon)
+    r = anon.post("/api/v1/statements", files=files)
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "CONSENT_REQUIRED"

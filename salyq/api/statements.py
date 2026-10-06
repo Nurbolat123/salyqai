@@ -1,9 +1,8 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Form, HTTPException, UploadFile
 
-from salyq.db import get_session
+from salyq.api.deps import DbSession, PdUser
 from salyq.settings import get_settings
 from salyq.statements import PARSERS, StatementParseError
 from salyq.statements.repository import save_statement
@@ -14,7 +13,8 @@ router = APIRouter(prefix="/statements", tags=["statements"])
 @router.post("")
 async def upload_statement(
     file: UploadFile,
-    session: Annotated[Session, Depends(get_session)],
+    session: DbSession,
+    user: PdUser,
     bank: Annotated[str, Form()] = "kaspi",
     account_iban: Annotated[str | None, Form()] = None,
 ) -> dict[str, Any]:
@@ -27,8 +27,11 @@ async def upload_statement(
         raise HTTPException(413, "файл слишком большой")
     try:
         parsed = parser(data, file.filename or "")
-        result = save_statement(session, parsed, raw=data, filename=file.filename or "", account_iban=account_iban)
+        result = save_statement(
+            session, parsed, user_id=user.id, raw=data, filename=file.filename or "", account_iban=account_iban
+        )
     except StatementParseError as exc:
+        session.rollback()
         raise HTTPException(422, str(exc)) from exc
     return {
         "statement_id": result.statement_id, "account": result.account_iban_masked,

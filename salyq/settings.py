@@ -1,17 +1,31 @@
 from functools import lru_cache
+from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SALYQ_", env_file=".env", extra="ignore")
 
+    environment: Literal["dev", "test", "prod"] = "dev"
     database_url: str = "postgresql+psycopg://salyq:salyq@localhost:5432/salyq"
     max_upload_bytes: int = 20 * 1024 * 1024
     # Ключи шифрования полей и слепых индексов: base64 от 32 случайных байт.
     # В проде — из KMS / Vault в РК; значения по умолчанию отсутствуют намеренно.
     field_key: str | None = None
     hmac_key: str | None = None
+
+    # Проверка подписи ЭЦП: "dev" — заглушка без криптографии, только для разработки
+    ecp_verifier: Literal["dev", "ncanode"] = "dev"
+    ecp_challenge_ttl_seconds: int = 300
+    session_ttl_hours: int = 12
+
+    @model_validator(mode="after")
+    def _no_dev_auth_in_prod(self) -> "Settings":
+        if self.environment == "prod" and self.ecp_verifier == "dev":
+            raise ValueError("SALYQ_ECP_VERIFIER=dev запрещён при SALYQ_ENVIRONMENT=prod")
+        return self
 
 
 @lru_cache

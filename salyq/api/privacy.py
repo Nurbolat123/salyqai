@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from salyq.api.deps import PdUser
 from salyq.privacy import Anonymizer
 
 router = APIRouter(prefix="/privacy", tags=["privacy"])
@@ -18,7 +19,7 @@ class AnonymizeResponse(BaseModel):
 
 
 @router.post("/anonymize")
-def anonymize(req: AnonymizeRequest) -> AnonymizeResponse:
+def anonymize(req: AnonymizeRequest, user: PdUser) -> AnonymizeResponse:
     """Предпросмотр обезличивания. Таблица соответствий наружу не отдаётся."""
     result = Anonymizer(known_names=req.known_names).anonymize(req.text, bucket_amounts=req.bucket_amounts)
     return AnonymizeResponse(

@@ -1,13 +1,15 @@
-"""Таблицы по разделу 5 ТЗ (часть, нужная налоговому движку и импорту выписок).
+"""Таблицы по разделу 5 ТЗ.
 
-users, consents, tax_calculations, declarations_910 и прочие появятся вместе с
-авторизацией и сборкой 910.00.
+Ещё не реализованы: tax_calculations, declarations_910, objections, chat_messages,
+reminders — появятся вместе с соответствующими функциями.
+Схема меняется только миграциями Alembic (migrations/).
 """
 
 from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -21,19 +23,100 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from salyq.crypto import EncryptedText
 from salyq.db import Base
 
 _BigId = BigInteger().with_variant(Integer, "sqlite")
+_Json = JSON().with_variant(JSONB, "postgresql")
+
+CONSENT_TYPES = ("pd_processing", "automated_processing", "cross_border")
+
+
+class User(Base):
+    """ИП. ИИН и ФИО берутся из сертификата ЭЦП и хранятся зашифрованными."""
+
+    __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("iin_hash", name="uq_users_iin_hash"),
+        CheckConstraint("employees_count >= 0", name="ck_users_employees"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    iin: Mapped[str] = mapped_column(EncryptedText)
+    iin_hash: Mapped[str] = mapped_column(String(64))  # слепой индекс для входа
+    full_name: Mapped[str] = mapped_column(EncryptedText)
+    region_code: Mapped[str | None] = mapped_column(String(16))  # КАТО
+    activity_code: Mapped[str | None] = mapped_column(String(16))  # ОКЭД
+    ip_registered_on: Mapped[date | None] = mapped_column(Date)
+    employees_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Consent(Base):
+    """Каждое согласие — отдельная строка; отзыв проставляет revoked_at (история сохраняется)."""
+
+    __tablename__ = "consents"
+    __table_args__ = (
+        CheckConstraint(f"type IN {CONSENT_TYPES}", name="ck_consents_type"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    type: Mapped[str] = mapped_column(String(32))
+    version: Mapped[str] = mapped_column(String(32))
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AuthChallenge(Base):
+    """Одноразовая строка, которую пользователь подписывает ЭЦП при входе."""
+
+    __tablename__ = "auth_challenges"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nonce_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AuthSession(Base):
+    """Сессия входа. В БД только хеш токена — утечка таблицы не даёт войти."""
+
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AuditLog(Base):
+    """Журнал действий (ТЗ 2, 4.8, 6). Только добавление; в PostgreSQL UPDATE/DELETE
+    запрещены триггером. В details — никаких ПДн, только идентификаторы и коды."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(_BigId, primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    actor_type: Mapped[str] = mapped_column(String(16))  # user | expert | system
+    actor_id: Mapped[int | None] = mapped_column(Integer)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    object_type: Mapped[str | None] = mapped_column(String(32))
+    object_id: Mapped[str | None] = mapped_column(String(64))
+    details: Mapped[dict] = mapped_column(_Json, default=dict)
 
 
 class BankAccount(Base):
     __tablename__ = "bank_accounts"
-    __table_args__ = (UniqueConstraint("bank", "iban_hash", name="uq_bank_accounts_iban"),)
+    __table_args__ = (UniqueConstraint("user_id", "bank", "iban_hash", name="uq_bank_accounts_iban"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     bank: Mapped[str] = mapped_column(String(32))
     iban: Mapped[str] = mapped_column(EncryptedText)  # полный IBAN только в зашифрованном виде
     iban_masked: Mapped[str] = mapped_column(String(16))

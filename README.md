@@ -4,10 +4,11 @@
 задание — [`docs/spec.md`](docs/spec.md).
 Стек: Python 3.12, FastAPI, SQLAlchemy 2, PostgreSQL 16.
 
-Сейчас реализованы три базовых модуля:
+Сейчас реализованы:
 
 | Модуль | Пакет | Раздел ТЗ | Что делает |
 |---|---|---|---|
+| Вход, согласия, журнал | `salyq/auth` | 2, 4.1, 6 | Вход по ЭЦП (подпись одноразового nonce), сессии, три типа согласий с версиями, журнал действий только на добавление |
 | Налоговый движок | `salyq/tax` | 4.4 | Налог за полугодие по ставкам регионов, соцплатежи ИП за себя, лимит режима, сроки. Суммы в тиынах, параметры из конфигурации по годам, «след» расчёта |
 | Шлюз обезличивания | `salyq/privacy` | 2, 6 | Единственный путь текста к внешней LLM: проверка согласия, удаление ПДн, суммы диапазонами, блокировка при остатках ПДн |
 | Импорт выписок | `salyq/statements` | 4.2 | Выписка Kaspi Business (PDF, XLSX, CSV), дедупликация, шифрование ПДн в БД |
@@ -15,7 +16,7 @@
 ## Запуск
 
 ```bash
-docker compose up --build          # API на http://localhost:8000, документация — /docs
+docker compose up --build          # миграции + API на http://localhost:8000, документация — /docs
 docker compose run --rm tests      # все тесты, включая прогон на реальном PostgreSQL
 ```
 
@@ -27,6 +28,7 @@ pip install -e ".[dev]"
 pytest                                             # тесты с PostgreSQL пропускаются
 TEST_DATABASE_URL=postgresql+psycopg://salyq:salyq@localhost:5432/salyq_test pytest
 cp .env.example .env                               # заполнить ключи шифрования
+alembic upgrade head                               # схема БД
 uvicorn salyq.main:app --reload
 ```
 
@@ -35,19 +37,79 @@ uvicorn salyq.main:app --reload
 | Метод | Путь | Назначение |
 |---|---|---|
 | GET | `/health` | Проверка живости |
+| POST | `/api/v1/auth/ecp/challenge` | Выдать одноразовый nonce для подписи ЭЦП (живёт 5 минут) |
+| POST | `/api/v1/auth/ecp` | Вход: `{nonce, signed_data}` → токен, профиль, недостающие согласия |
+| DELETE | `/api/v1/auth/session` | Выход |
+| GET / PATCH | `/api/v1/me` | Профиль ИП: регион (КАТО), ОКЭД, дата регистрации, работники |
+| GET / POST | `/api/v1/consents` | Список согласий и актуальных версий / дать согласие `{type, version}` |
+| DELETE | `/api/v1/consents/{type}` | Отозвать согласие |
 | GET | `/api/v1/tax/years` | Годы, для которых есть конфигурация |
 | POST | `/api/v1/tax/simplified` | Налог за полугодие по регионам: лимит, сроки, «след» |
 | POST | `/api/v1/tax/self-social` | ОПВ, ОПВР, СО и ВОСМС ИП за себя за месяц |
-| POST | `/api/v1/privacy/anonymize` | Предпросмотр обезличивания (таблица соответствий наружу не отдаётся) |
-| POST | `/api/v1/statements` | Загрузка выписки (multipart: `file`, `bank=kaspi`, необязательно `account_iban`) |
+| POST | `/api/v1/privacy/anonymize` | 🔒 Предпросмотр обезличивания (таблица соответствий наружу не отдаётся) |
+| POST | `/api/v1/statements` | 🔒 Загрузка выписки (multipart: `file`, `bank=kaspi`, необязательно `account_iban`) |
+
+🔒 — нужны вход (`Authorization: Bearer <token>`) и согласие `pd_processing`. Без согласия
+ответ 403 с `{"code": "CONSENT_REQUIRED", "consent": …, "version": …}`. Калькуляторы
+`/tax/*` персональных данных не принимают и открыты.
 
 ```bash
 curl -s localhost:8000/api/v1/tax/simplified -H 'content-type: application/json' \
   -d '{"year": 2026, "half": 1, "regions": [{"region_code": "750000000", "income_tiyn": 1000000000}]}'
 ```
 
-Пути из раздела 5 ТЗ (`/tax/summary`, `/tax/calculations/{id}/explain` и другие) требуют
-пользователей и подтверждённых операций. Они появятся вместе с авторизацией.
+Пути `/tax/summary` и `/tax/calculations/{id}/explain` из раздела 5 ТЗ появятся после
+разметки и подтверждения операций.
+
+## Вход, согласия, журнал действий
+
+**Вход по ЭЦП** (ТЗ 4.1):
+
+1. Приложение получает одноразовый nonce: `POST /auth/ecp/challenge`.
+2. Пользователь подписывает его в NCALayer или eGov Mobile.
+3. Приложение отправляет подпись: `POST /auth/ecp`.
+
+Сервер проверяет подпись и берёт ИИН и ФИО из сертификата. При первом входе создаётся
+пользователь. Nonce одноразовый, в том числе после неудачной попытки. В БД хранятся
+только хеши nonce и токена сессии, а ИИН и ФИО — зашифрованными (поиск по слепому индексу
+`iin_hash`).
+
+Проверка подписи спрятана за интерфейсом `EcpVerifier` (`salyq/auth/ecp.py`):
+
+- `SALYQ_ECP_VERIFIER=dev` — заглушка **без криптографии**: `signed_data` — base64 от JSON
+  `{nonce, iin, full_name}`, подписать можно через `DevEcpVerifier.sign(...)`. При
+  `SALYQ_ENVIRONMENT=prod` приложение с ней не запустится.
+- `SALYQ_ECP_VERIFIER=ncanode` — проверка CMS-подписи через NCANode. Пока не реализована:
+  нужен доступ к тестовому контуру eGov и тестовые ключи НУЦ.
+
+**Согласия** (ТЗ 2, 4.1): `pd_processing` (обязательное), `automated_processing`
+(ст. 19-1, понадобится для авторазметки), `cross_border` (необязательное). Версии текстов
+задаёт `CONSENT_VERSIONS` в `salyq/auth/consents.py`. Если выходит новая редакция текста,
+старое согласие перестаёт действовать, и пользователь соглашается заново. Отзыв проставляет
+`revoked_at`, история сохраняется.
+
+**Журнал действий** (`audit_log`) пишется в той же транзакции, что и само действие.
+Записываются события: вход, неудачный вход с причиной, выход, выдача и отзыв согласия,
+изменение профиля, загрузка выписки. В `details` попадают только коды и идентификаторы,
+без ПДн. В PostgreSQL изменять и удалять записи запрещает триггер.
+
+**Счета принадлежат пользователю.** Один и тот же IBAN у двух пользователей — это два
+разных счёта, и дедупликация между ними не смешивается.
+
+## Миграции
+
+Схему БД меняют только миграции Alembic (`migrations/`). Приложение таблицы не создаёт.
+
+```bash
+alembic upgrade head                                   # применить
+alembic revision --autogenerate -m "что изменилось"    # после правки salyq/models.py
+alembic check                                          # модели и миграции совпадают?
+```
+
+Колонки с шифртекстом в миграциях объявлены как `sa.Text()`: так миграции не зависят от
+кода приложения. Тесты на PostgreSQL строят схему из миграций, а не через `create_all`, и
+отдельно проверяют три вещи: схема совпадает с моделями, откат до `base` работает,
+журнал защищён от изменений.
 
 ## Налоговый движок
 
@@ -192,19 +254,20 @@ Freedom — следующими.
 salyq/
   money.py            тиыны, разбор и округление
   crypto.py           шифрование полей, слепые индексы
+  auth/               ecp.py (проверка подписи), service.py (вход, сессии), consents.py, audit.py
   tax/                config.py, engine.py, trace.py, region_rates.py, rates/*.yaml
   privacy/            gateway.py (детекторы, Anonymizer, prepare_external), validators.py
   statements/         kaspi.py (парсер), repository.py (сохранение с дедупликацией)
-  models.py, db.py    bank_accounts, statements, transactions, region_rates
-  api/                роутеры FastAPI
+  models.py, db.py    users, consents, auth_*, audit_log, bank_accounts, statements, transactions, region_rates
+  api/                роутеры FastAPI; deps.py — текущий пользователь и проверка согласий
+migrations/           Alembic
 tests/                pytest; fixtures/ — синтетические выписки (данные вымышлены),
                       make_kaspi_pdf.py пересоздаёт PDF (нужен reportlab)
 ```
 
 ## Дальше
 
-- Миграции Alembic вместо `create_all` при старте.
-- Пользователи, вход по ЭЦП, согласия (`consents`), `audit_log`.
+- Реальная проверка ЭЦП через NCANode (нужен доступ к тестовому контуру eGov).
 - Таблицы `tax_config` (утверждение экспертом) и `tax_calculations` (хранение «следа»).
 - Разметка операций; пересчёт валюты по курсу НБ РК (поля `currency` и `fx_rate` уже есть).
 - Парсеры Halyk и Freedom; сверка формата Kaspi с реальными выгрузками.

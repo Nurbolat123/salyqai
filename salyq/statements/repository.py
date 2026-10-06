@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
+from salyq.auth import audit
 from salyq.crypto import blind_index, mask_iban
 from salyq.models import BankAccount, Statement, Transaction
 from salyq.statements.kaspi import ParsedStatement, StatementParseError
@@ -25,13 +26,15 @@ class ImportResult:
     skipped: list[tuple[int, str]]
 
 
-def _get_or_create_account(session: Session, bank: str, iban: str) -> BankAccount:
+def _get_or_create_account(session: Session, user_id: int, bank: str, iban: str) -> BankAccount:
     iban_hash = blind_index(iban, "iban")
-    account = session.scalar(
-        select(BankAccount).where(BankAccount.bank == bank, BankAccount.iban_hash == iban_hash)
-    )
+    account = session.scalar(select(BankAccount).where(
+        BankAccount.user_id == user_id, BankAccount.bank == bank, BankAccount.iban_hash == iban_hash,
+    ))
     if account is None:
-        account = BankAccount(bank=bank, iban=iban, iban_masked=mask_iban(iban), iban_hash=iban_hash)
+        account = BankAccount(
+            user_id=user_id, bank=bank, iban=iban, iban_masked=mask_iban(iban), iban_hash=iban_hash
+        )
         session.add(account)
         session.flush()
     return account
@@ -44,7 +47,13 @@ def _counterparty_hash(tx) -> str:
 
 
 def save_statement(
-    session: Session, parsed: ParsedStatement, *, raw: bytes, filename: str, account_iban: str | None = None
+    session: Session,
+    parsed: ParsedStatement,
+    *,
+    user_id: int,
+    raw: bytes,
+    filename: str,
+    account_iban: str | None = None,
 ) -> ImportResult:
     iban = (account_iban or parsed.account_iban or "").replace(" ", "").upper()
     if not iban:
@@ -52,7 +61,7 @@ def save_statement(
     if parsed.account_iban and account_iban and parsed.account_iban != iban:
         raise StatementParseError("номер счёта в файле не совпадает с указанным")
 
-    account = _get_or_create_account(session, parsed.bank, iban)
+    account = _get_or_create_account(session, user_id, parsed.bank, iban)
     sha = hashlib.sha256(raw).hexdigest()
     st = Statement(
         account_id=account.id, file_ref=f"sha256:{sha}", file_name=filename, file_sha256=sha,
@@ -91,6 +100,9 @@ def save_statement(
 
     st.rows_inserted = inserted
     st.rows_duplicate = len(values) - inserted + parsed.duplicates_in_file
+    audit.record(session, "statement.upload", actor_type="user", actor_id=user_id,
+                 object_type="statement", object_id=st.id, bank=parsed.bank,
+                 inserted=inserted, duplicates=st.rows_duplicate, skipped=st.rows_skipped)
     session.commit()
     return ImportResult(
         statement_id=st.id, account_iban_masked=account.iban_masked, parsed=len(values),

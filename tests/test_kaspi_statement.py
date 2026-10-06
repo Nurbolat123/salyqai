@@ -6,10 +6,10 @@ import pytest
 from openpyxl import Workbook
 from sqlalchemy import select, text
 
-from salyq.models import BankAccount, Statement, Transaction
+from salyq.models import AuditLog, BankAccount, Statement, Transaction, User
 from salyq.statements import StatementParseError, parse_kaspi_statement, parse_rows
 from salyq.statements.repository import save_statement
-from tests.helpers import make_kz_iban
+from tests.helpers import make_kz_iban, make_kz_id, make_user
 
 FIXTURE = Path(__file__).parent / "fixtures" / "kaspi_business_2026_01.csv"
 PDF_FIXTURE = FIXTURE.with_suffix(".pdf")
@@ -119,8 +119,9 @@ class TestParsing:
 
 
 class TestDeduplication:
-    def _import(self, session, data: bytes, name="s.csv"):
-        return save_statement(session, parse_kaspi_statement(data, name), raw=data, filename=name)
+    def _import(self, session, data: bytes, name="s.csv", user=None):
+        user = user or session.scalar(select(User)) or make_user(session)
+        return save_statement(session, parse_kaspi_statement(data, name), user_id=user.id, raw=data, filename=name)
 
     def test_reimport_same_file(self, db):
         data = FIXTURE.read_bytes()
@@ -147,7 +148,8 @@ class TestDeduplication:
         with pytest.raises(StatementParseError, match="номер счёта"):
             self._import(db, data)
         parsed = parse_kaspi_statement(data, "a.csv")
-        assert save_statement(db, parsed, raw=data, filename="a.csv", account_iban=ACCOUNT).inserted == 1
+        user = db.scalar(select(User))
+        assert save_statement(db, parsed, user_id=user.id, raw=data, filename="a.csv", account_iban=ACCOUNT).inserted == 1
 
     def test_pdf_after_csv_adds_nothing(self, db):
         assert self._import(db, FIXTURE.read_bytes()).inserted == 5
@@ -190,3 +192,17 @@ class TestDeduplication:
         self._import(db, rows_csv(rows))
         hashes = db.scalars(select(Transaction.counterparty_hash)).all()
         assert len(set(hashes)) == 1
+
+    def test_accounts_are_per_user(self, db):
+        alice = make_user(db)
+        bob = make_user(db, iin=make_kz_id("90020240012"), full_name="Другов Друг")
+        assert self._import(db, FIXTURE.read_bytes(), user=alice).inserted == 5
+        assert self._import(db, FIXTURE.read_bytes(), user=bob).inserted == 5  # чужой счёт — не дубль
+        owners = db.scalars(select(BankAccount.user_id).order_by(BankAccount.user_id)).all()
+        assert owners == [alice.id, bob.id]
+
+    def test_upload_is_audited(self, db):
+        r = self._import(db, FIXTURE.read_bytes(), "Иванов.csv")
+        entry = db.scalar(select(AuditLog).where(AuditLog.action == "statement.upload"))
+        assert (entry.object_id, entry.details["inserted"]) == (str(r.statement_id), 5)
+        assert "Иванов" not in repr(entry.details)
